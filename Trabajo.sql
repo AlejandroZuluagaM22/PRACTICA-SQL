@@ -1,12 +1,7 @@
----
-format: html
-editor: visual
-  markdown: 
-    wrap: 72
----
 
-PUNTO 3
----
+
+-- PUNTO 3
+
 CREATE OR REPLACE TABLE keepcoding.ivr_detail AS
 WITH calls AS (
     SELECT 
@@ -90,4 +85,62 @@ ON
     m.ivr_id = s.ivr_id
 AND 
     m.module_sequece = s.module_sequece;
----
+
+
+-- PUNTO 4
+
+CREATE OR REPLACE TABLE keepcoding.ivr_detail AS 
+SELECT 
+    calls_ivr_id ,
+    calls_vdn_label ,
+    CASE 
+        WHEN STARTS_WITH(calls_vdn_label, 'ATC') THEN 'FRONT' 
+        WHEN STARTS_WITH(calls_vdn_label, 'TECH') THEN 'TECH'
+        WHEN calls_vdn_label = 'ABSORPTION' THEN 'ABSORPTION'
+        ELSE 'RESTO'
+    END AS calls_vdn_aggregation 
+    FROM keepcoding.ivr_detail
+
+-- PUNTO 5
+
+WITH clients_ivr_id AS (
+    SELECT 
+        calls_ivr_id,
+        document_type,
+        document_identification,
+        ROW_NUMBER() OVER (PARTITION BY CAST(calls_ivr_id AS INT64) ORDER BY document_type) AS rn
+    FROM 
+        keepcoding.ivr_detail
+)
+
+SELECT 
+    calls_ivr_id,
+    document_type,
+    document_identification
+FROM 
+    clients_ivr_id
+WHERE 
+    rn = 1;
+
+-- PUNTO 6
+
+WITH client_identification_phone AS (
+    SELECT 
+        calls_ivr_id,
+        customer_phone,
+        ROW_NUMBER() OVER (PARTITION BY CAST(calls_ivr_id AS INT64) ORDER BY customer_phone) AS rn
+    FROM 
+        keepcoding.ivr_detail
+)
+
+SELECT 
+    calls_ivr_id,
+    customer_phone
+FROM 
+    client_identification_phone
+WHERE 
+    rn = 1;
+
+-- PUNTO 7
+
+
