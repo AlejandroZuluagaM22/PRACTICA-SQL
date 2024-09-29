@@ -108,7 +108,7 @@ WITH clients_ivr_id AS (
         calls_ivr_id,
         document_type,
         document_identification,
-        ROW_NUMBER() OVER (PARTITION BY CAST(calls_ivr_id AS INT64) ORDER BY document_type) AS rn
+        ROW_NUMBER() OVER (PARTITION BY CAST(calls_ivr_id AS INT64) ORDER BY document_identification) AS rn
     FROM 
         keepcoding.ivr_detail
 )
@@ -143,4 +143,95 @@ WHERE
 
 -- PUNTO 7
 
+WITH client_identification_billing AS (
+    SELECT 
+        calls_ivr_id,
+        billing_account_id,
+        ROW_NUMBER() OVER (PARTITION BY CAST(calls_ivr_id AS INT64) ORDER BY billing_account_id) AS rn
+    FROM 
+        keepcoding.ivr_detail
+)
 
+SELECT 
+    calls_ivr_id,
+    billing_account_id
+FROM 
+    client_identification_billing
+WHERE 
+    rn = 1;
+
+
+-- PUNTO 8
+CREATE OR REPLACE TABLE keepcoding.ivr_detail_masiva AS 
+SELECT 
+    calls_ivr_id,
+    module_name,
+    CASE 
+        WHEN module_name = 'AVERIA_MASIVA' THEN 1 ELSE 0
+    END AS masiva_ig,
+    ROW_NUMBER() OVER (PARTITION BY CAST(calls_ivr_id AS INT64) ORDER BY calls_ivr_id) AS rn
+FROM 
+    `keepcoding.ivr_detail`;
+
+
+-- PUNTO 9
+CREATE OR REPLACE TABLE keepcoding.ivr_detail_info_phone AS 
+SELECT 
+    calls_ivr_id, 
+    step_name,
+    customer_phone,
+    CASE
+        WHEN step_name = 'CUSTOMERINFOBYPHONE.TX' AND UPPER(step_result) = 'OK' THEN 1 ELSE 0
+    END AS info_by_phone_lg
+FROM `keepcoding.ivr_detail`;
+
+-- PUNTO 10
+
+CREATE OR REPLACE TABLE keepcoding.ivr_detail_info_dni AS 
+SELECT 
+    calls_ivr_id, 
+    step_name,
+    document_type,
+    document_identification,
+    CASE
+        WHEN step_name = 'CUSTOMERINFOBYDNI.TX' AND UPPER(step_result) = 'OK' THEN 1 ELSE 0
+    END AS info_by_dni_lg
+FROM `keepcoding.ivr_detail`;
+
+-- PUNTO 11
+
+
+WITH info_24hrs_calls AS
+(
+SELECT 
+    calls_ivr_id, 
+    calls_phone_number, 
+    calls_start_date,
+    LAG(calls_start_date) OVER (PARTITION BY calls_phone_number ORDER BY calls_start_date) AS previous_date, 
+    LEAD(calls_start_date) OVER (PARTITION BY calls_phone_number ORDER BY calls_start_date) AS next_date
+FROM `keepcoding.ivr_detail`
+WHERE calls_phone_number != 'UNKNOWN'
+GROUP BY calls_ivr_id, calls_phone_number, calls_start_date
+)
+
+SELECT 
+    calls_ivr_id,
+    CASE 
+        WHEN previous_date IS NOT NULL AND DATETIME_DIFF(calls_start_date, previous_date, HOUR) <= 24 
+        THEN 1 ELSE 0 
+    END AS previous_call_within_24hrs,
+    CASE 
+        WHEN next_date IS NOT NULL AND DATETIME_DIFF(next_date, calls_start_date, HOUR) <= 24 
+        THEN 1 ELSE 0 
+    END AS next_call_within_24hrs
+FROM info_24hrs_calls;
+
+-- PUNTO 13
+
+CREATE FUNCTION clean_integer(input_value INT64)
+RETURNS INT64 AS (
+  CASE
+    WHEN input_value IS NULL THEN -999999
+    ELSE input_value
+  END
+);
